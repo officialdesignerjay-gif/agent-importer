@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guardian Life — Policy Report Importer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root {
+  --bg: #0D0D0F;
+  --bg2: #141416;
+  --bg3: #1C1C1F;
+  --bg4: #242428;
+  --border: #2A2A2E;
+  --border2: #3A3A3F;
+  --orange: #E94E1B;
+  --orange-d: #C03E14;
+  --orange-l: #FF6B35;
+  --text: #F0F0F0;
+  --text2: #909095;
+  --text3: #565660;
+  --green: #1D9E75;
+  --green-bg: #0D2E22;
+  --amber: #BA7517;
+  --amber-bg: #2A1E08;
+  --red: #E24B4A;
+  --red-bg: #2E0D0D;
+  --radius: 10px;
+  --radius-lg: 16px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── noise texture overlay ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 0; opacity: .5;
+}
+
+/* ── header ── */
+header {
+  position: relative; z-index: 10;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13,13,15,.9);
+  backdrop-filter: blur(12px);
+  padding: 0 2rem;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 60px;
+}
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-mark {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--orange);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; color: #fff; letter-spacing: -.5px;
+}
+.logo-name { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: .02em; }
+.logo-sub { font-size: 11px; color: var(--text3); margin-top: 1px; font-weight: 400; }
+.header-badge {
+  font-size: 11px; font-weight: 500; color: var(--orange);
+  border: 1px solid var(--orange);
+  padding: 4px 10px; border-radius: 20px; letter-spacing: .04em;
+}
+
+/* ── hero ── */
+.hero {
+  position: relative; z-index: 1;
+  padding: 5rem 2rem 3rem;
+  max-width: 860px; margin: 0 auto; text-align: center;
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--orange); margin-bottom: 1.25rem;
+}
+.hero-eyebrow::before, .hero-eyebrow::after {
+  content: ''; display: block; width: 24px; height: 1px; background: var(--orange); opacity: .5;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800; line-height: 1.08;
+  letter-spacing: -.03em; color: var(--text);
+  margin-bottom: 1rem;
+}
+h1 span { color: var(--orange); }
+.hero-sub {
+  font-size: 15px; color: var(--text2); line-height: 1.65;
+  max-width: 520px; margin: 0 auto 2.5rem;
+  font-weight: 400;
+}
+.steps-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; flex-wrap: wrap; margin-bottom: 3rem;
+}
+.step-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text2); font-weight: 500;
+}
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--orange); color: #fff;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.step-arrow {
+  width: 28px; height: 1px; background: var(--border2); margin: 0 6px;
+}
+
+/* ── main card ── */
+.main { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.card-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+}
+.tab {
+  flex: 1; padding: 1rem;
+  font-size: 13px; font-weight: 500; letter-spacing: .02em;
+  color: var(--text3); border: none; background: none; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+.tab-icon { width: 14px; height: 14px; opacity: .7; }
+
+.panel { display: none; padding: 1.75rem; }
+.panel.active { display: block; }
+
+/* ── drop zone ── */
+.dropzone {
+  border: 1.5px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 2.5rem 1.5rem;
+  text-align: center; cursor: pointer;
+  transition: border-color .2s, background .2s;
+  background: var(--bg3);
+}
+.dropzone:hover, .dropzone.drag { border-color: var(--orange); background: rgba(233,78,27,.04); }
+.dz-icon {
+  width: 40px; height: 40px; margin: 0 auto 12px;
+  background: var(--bg4); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+.dz-icon svg { width: 20px; height: 20px; }
+.dz-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.dz-sub { font-size: 12px; color: var(--text3); }
+.dz-sub span { color: var(--orange); text-decoration: underline; cursor: pointer; }
+#fileInput { display: none; }
+
+/* ── textarea ── */
+textarea {
+  width: 100%; min-height: 160px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+  color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px;
+  line-height: 1.6; resize: vertical;
+  transition: border-color .15s;
+}
+textarea:focus { outline: none; border-color: var(--orange); }
+textarea::placeholder { color: var(--text3); }
+
+/* ── action row ── */
+.action-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+.btn {
+  padding: 9px 20px; border-radius: var(--radius);
+  border: 1px solid var(--border2);
+  background: var(--bg3); color: var(--text);
+  font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background .15s, border-color .15s, transform .1s;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn:hover { background: var(--bg4); border-color: var(--border2); }
+.btn:active { transform: scale(.98); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.pri { background: var(--orange); border-color: var(--orange); color: #fff; }
+.btn.pri:hover { background: var(--orange-d); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text3); font-size: 12px; padding: 9px 12px; }
+.btn.ghost:hover { color: var(--text2); background: transparent; }
+
+/* ── status ── */
+.status { margin-top: 12px; font-size: 13px; min-height: 20px; color: var(--text3); display: flex; align-items: center; gap: 7px; }
+.status.ok { color: var(--green); }
+.status.err { color: var(--red); }
+.status.loading { color: var(--orange); }
+.spin {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(233,78,27,.25); border-top-color: var(--orange);
+  animation: spin .7s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── divider ── */
+.divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+
+/* ── stats bar ── */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-bottom: 1.25rem; }
+.stat { background: var(--bg3); border-radius: var(--radius); padding: 12px 14px; }
+.stat-l { font-size: 10px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); margin-bottom: 4px; }
+.stat-v { font-size: 22px; font-weight: 700; color: var(--text); }
+.stat-v.warn { color: var(--orange); }
+.stat-v.ok { color: var(--green); }
+
+/* ── preview header ── */
+.preview-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+}
+.preview-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.preview-count { font-size: 12px; color: var(--text3); }
+
+/* ── table ── */
+.tbl-scroll { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-family: 'DM Mono', monospace; font-size: 11px; }
+th {
+  background: var(--bg3); color: var(--text3); font-weight: 500;
+  padding: 9px 10px; text-align: left;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+td {
+  padding: 7px 10px; color: var(--text);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap; max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg3); }
+.pill {
+  display: inline-block; padding: 2px 8px; border-radius: 20px;
+  font-size: 10px; font-weight: 500; font-family: 'Syne', sans-serif;
+}
+.pill.lapsed { background: var(--red-bg); color: var(--red); }
+.pill.crit { background: var(--amber-bg); color: var(--amber); }
+.pill.soon { background: #2A2208; color: #EF9F27; }
+.pill.ok { background: var(--green-bg); color: var(--green); }
+.days-neg { color: var(--red); font-weight: 500; }
+.days-crit { color: var(--amber); font-weight: 500; }
+.days-soon { color: #EF9F27; font-weight: 500; }
+.days-ok { color: var(--green); font-weight: 500; }
+
+/* ── footer ── */
+footer {
+  position: relative; z-index: 1;
+  border-top: 1px solid var(--border);
+  padding: 1.5rem 2rem;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+}
+.footer-left { font-size: 11px; color: var(--text3); }
+.footer-left span { color: var(--orange); }
+.footer-right { font-size: 11px; color: var(--text3); }
+
+/* ── file badge ── */
+.file-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: 8px; padding: 8px 12px; margin-top: 12px;
+  font-size: 12px; color: var(--text2);
+}
+.file-badge svg { width: 14px; height: 14px; color: var(--orange); }
+
+/* ── responsive ── */
+@media (max-width: 600px) {
+  header { padding: 0 1rem; }
+  .hero { padding: 3rem 1rem 2rem; }
+  .main { padding: 0 1rem 3rem; }
+  .panel { padding: 1.25rem; }
+  .steps-row { gap: 4px; }
+  .step-arrow { width: 16px; }
+}
+
+/* ── animations ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.hero { animation: fadeUp .5s ease both; }
+.main { animation: fadeUp .5s .1s ease both; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">GL</div>
+    <div>
+      <div class="logo-name">Guardian Life</div>
+      <div class="logo-sub">Agency 33002 — Report Tools</div>
+    </div>
+  </div>
+  <span class="header-badge">Agent Portal</span>
+</header>
+
+<section class="hero">
+  <div class="hero-eyebrow">Overdue Premium Reports</div>
+  <h1>Import your report.<br><span>Download in seconds.</span></h1>
+  <p class="hero-sub">Upload your Guardian Life overdue premium PDF or paste the report text. Get a clean Excel file instantly — all cases in one sheet, sorted by lapse date.</p>
+  <div class="steps-row">
+    <div class="step-item"><span class="step-num">1</span> Upload or paste report</div>
+    <div class="step-arrow"></div>
+    <div class="step-item"><span class="step-num">2</span> Extract cases</div>
+    <div class="step-arrow"></div>
+    <div class="step-item"><span class="step-num">3</span> Download Excel</div>
+  </div>
+</section>
+
+<main class="main">
+  <div class="card">
+    <div class="card-tabs">
+      <button class="tab active" onclick="switchTab('pdf')">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        Upload PDF
+      </button>
+      <button class="tab" onclick="switchTab('text')">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+        Paste Text
+      </button>
+    </div>
+
+    <!-- PDF Panel -->
+    <div class="panel active" id="panel-pdf">
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="handleDrop(event)">
+        <div class="dz-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#E94E1B" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="dz-title">Drop your PDF here</div>
+        <div class="dz-sub">or <span>browse files</span> — Guardian Life overdue premium report</div>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf" onchange="handleFile(this.files[0])">
+      <div id="fileBadge" style="display:none" class="file-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        <span id="fileName">—</span>
+      </div>
+      <div class="action-row">
+        <button class="btn pri" id="pdfParseBtn" onclick="parsePDF()" disabled>Extract cases</button>
+        <button class="btn" id="pdfDlBtn" onclick="downloadXL()" disabled>Download Excel</button>
+        <button class="btn ghost" onclick="clearAll()">Clear</button>
+      </div>
+      <div class="status" id="pdfStatus"></div>
+    </div>
+
+    <!-- Text Panel -->
+    <div class="panel" id="panel-text">
+      <textarea id="txt" placeholder="Paste your Guardian Life report text here...
+
+GOPAUL ROGER VIDESH  5000671244  05APR2004  05SEP2025  B  01  156.00  .00  04DEC2025
+DIAZ NICHOLAS  1000531376  16DEC2022  16DEC2025  4  01  265.70  .00  16MAR2026
+..."></textarea>
+      <div class="action-row">
+        <button class="btn pri" onclick="parseText()">Extract cases</button>
+        <button class="btn" id="txtDlBtn" onclick="downloadXL()" disabled>Download Excel</button>
+        <button class="btn ghost" onclick="document.getElementById('txt').value='';setStatus('txtStatus','','')">Clear</button>
+      </div>
+      <div class="status" id="txtStatus"></div>
+    </div>
+
+    <!-- Preview (shared) -->
+    <div id="previewSection" style="display:none;padding:0 1.75rem 1.75rem">
+      <hr class="divider" style="margin-top:0">
+      <div class="stats" id="statsBar"></div>
+      <div class="preview-head">
+        <span class="preview-title">All cases — sorted by lapse date</span>
+        <span class="preview-count" id="countLbl"></span>
+      </div>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr>
+            <th>Name</th><th>Policy #</th><th>Issue date</th><th>Paid to</th>
+            <th>Type</th><th>Mode</th><th>Premium</th><th>APL</th>
+            <th>Proj. lapse</th><th>Days</th><th>Status</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="action-row" style="margin-top:14px">
+        <button class="btn pri" onclick="downloadXL()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Excel
+        </button>
+        <span style="font-size:12px;color:var(--text3)">All cases in one sheet · Sorted by nearest lapse</span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-left">Guardian Life of the Caribbean · Agency 33002 · <span>Policy Importer v1.0</span></div>
+  <div class="footer-right">All processing done locally in your browser — no data is uploaded or stored</div>
+</footer>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const MONTHS = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+let rows = [];
+let pdfFile = null;
+
+function parseDate(s) {
+  if (!s || s.length !== 9) return null;
+  const d = parseInt(s.slice(0,2)), m = MONTHS[s.slice(2,5)], y = parseInt(s.slice(5));
+  if (isNaN(d) || m === undefined || isNaN(y)) return null;
+  return new Date(y, m, d);
+}
+
+function daysTo(lapseStr) {
+  const d = parseDate(lapseStr);
+  if (!d) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.round((d - today) / 86400000);
+}
+
+function getStatus(days) {
+  if (days === null) return {label:'Unknown', cls:'soon'};
+  if (days < 0) return {label:'Lapsed', cls:'lapsed'};
+  if (days <= 14) return {label:'Critical', cls:'crit'};
+  if (days <= 30) return {label:'Expiring', cls:'soon'};
+  return {label:'Active', cls:'ok'};
+}
+
+function localParse(raw) {
+  const dateRE = /\b\d{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}\b/g;
+  const numRE = /\d+\.\d{2}/g;
+  const polRE = /\b(?:[158]\d{9}|10\d{8}|80\d{8})\b/g;
+  const skip = /AGENT|CAPS|GUARDIAN|PAGE|DATE:|TIME:|AGENCY|NAME OF|LIFE INSURED|PROJECTED|BILLING|FOLLOW|TOTAL/i;
+  const out = [];
+  for (const line of raw.split('\n')) {
+    const l = line.trim();
+    if (!l || skip.test(l)) continue;
+    const dates = l.match(dateRE) || [];
+    const nums = l.match(numRE) || [];
+    const pols = l.match(polRE) || [];
+    if (dates.length < 2 || nums.length < 1 || pols.length < 1) continue;
+    const pi = l.indexOf(pols[0]);
+    const name = l.slice(0, pi).trim();
+    if (!name || name.length < 3) continue;
+    const after = l.slice(pi + pols[0].length).trim().split(/\s+/);
+    let ti = 0;
+    while (ti < after.length && /\d{2}[A-Z]{3}\d{4}/.test(after[ti])) ti++;
+    out.push({
+      name, policy: pols[0],
+      issueDate: dates[0]||'', paidTo: dates[1]||'',
+      billType: after[ti]||'', mode: after[ti+1]||'',
+      premium: parseFloat(nums[0])||0,
+      apl: nums.length >= 2 ? parseFloat(nums[1]) : 0,
+      lapseDate: dates[2]||''
+    });
+  }
+  return out;
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('panel-' + tab).classList.add('active');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropzone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') handleFile(file);
+  else setStatus('pdfStatus', 'Please drop a PDF file.', 'err');
+}
+
+function handleFile(file) {
+  if (!file) return;
+  pdfFile = file;
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileBadge').style.display = 'inline-flex';
+  document.getElementById('pdfParseBtn').disabled = false;
+  setStatus('pdfStatus', 'PDF loaded — click Extract cases.', 'ok');
+}
+
+async function parsePDF() {
+  if (!pdfFile) return;
+  setStatus('pdfStatus', 'Reading PDF...', 'loading');
+  document.getElementById('pdfParseBtn').disabled = true;
+  try {
+    const arrayBuffer = await pdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    rows = localParse(fullText);
+    if (!rows.length) throw new Error('No cases found');
+    rows.sort((a,b) => {
+      const da = parseDate(a.lapseDate) || new Date(9999,0);
+      const db = parseDate(b.lapseDate) || new Date(9999,0);
+      return da - db;
+    });
+    render();
+    document.getElementById('pdfDlBtn').disabled = false;
+    setStatus('pdfStatus', `Extracted ${rows.length} cases successfully.`, 'ok');
+  } catch(e) {
+    setStatus('pdfStatus', 'Could not read PDF. Try the Paste Text tab instead.', 'err');
+  }
+  document.getElementById('pdfParseBtn').disabled = false;
+}
+
+async function parseText() {
+  const txt = document.getElementById('txt').value.trim();
+  if (!txt) { setStatus('txtStatus', 'Paste your report text first.', 'err'); return; }
+  setStatus('txtStatus', 'Extracting cases...', 'loading');
+  rows = localParse(txt);
+  rows.sort((a,b) => {
+    const da = parseDate(a.lapseDate) || new Date(9999,0);
+    const db = parseDate(b.lapseDate) || new Date(9999,0);
+    return da - db;
+  });
+  if (rows.length) {
+    render();
+    document.getElementById('txtDlBtn').disabled = false;
+    setStatus('txtStatus', `Extracted ${rows.length} cases.`, 'ok');
+  } else {
+    setStatus('txtStatus', 'No cases found. Make sure the report text is pasted correctly.', 'err');
+  }
+}
+
+function render() {
+  let lapsed=0, critical=0, expiring=0, active=0, totalPrem=0;
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  rows.forEach(r => {
+    const days = daysTo(r.lapseDate);
+    const st = getStatus(days);
+    if (st.cls === 'lapsed') lapsed++;
+    else if (st.cls === 'crit') critical++;
+    else if (st.cls === 'soon') expiring++;
+    else active++;
+    totalPrem += (+r.premium || 0);
+    let daysCls = 'days-ok';
+    if (days !== null && days < 0) daysCls = 'days-neg';
+    else if (days !== null && days <= 14) daysCls = 'days-crit';
+    else if (days !== null && days <= 30) daysCls = 'days-soon';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td title="${r.name}">${r.name}</td>
+      <td>${r.policy}</td>
+      <td>${r.issueDate}</td>
+      <td>${r.paidTo}</td>
+      <td>${r.billType}</td>
+      <td>${r.mode}</td>
+      <td>${(+r.premium).toFixed(2)}</td>
+      <td>${r.apl ? (+r.apl).toFixed(2) : '—'}</td>
+      <td>${r.lapseDate}</td>
+      <td class="${daysCls}">${days !== null ? days : '—'}</td>
+      <td><span class="pill ${st.cls}">${st.label}</span></td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('countLbl').textContent = `${rows.length} records`;
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat"><div class="stat-l">Total cases</div><div class="stat-v">${rows.length}</div></div>
+    <div class="stat"><div class="stat-l">Lapsed</div><div class="stat-v warn">${lapsed}</div></div>
+    <div class="stat"><div class="stat-l">Critical ≤14d</div><div class="stat-v warn">${critical}</div></div>
+    <div class="stat"><div class="stat-l">Expiring ≤30d</div><div class="stat-v">${expiring}</div></div>
+    <div class="stat"><div class="stat-l">Active</div><div class="stat-v ok">${active}</div></div>
+    <div class="stat"><div class="stat-l">Total premium</div><div class="stat-v">$${totalPrem.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>`;
+  document.getElementById('previewSection').style.display = 'block';
+  document.getElementById('previewSection').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function downloadXL() {
+  if (!rows.length) return;
+  const hdrs = ['NAME OF LIFE INSURED','POLICY #','ISSUE DATE','PAID TO DATE','BILLING TYPE','MODE','PREMIUM ($)','APL AMOUNT ($)','PROJ. LAPSE DATE','DAYS TO LAPSE','STATUS'];
+  const dataRows = rows.map(r => {
+    const days = daysTo(r.lapseDate);
+    return [r.name, r.policy, r.issueDate, r.paidTo, r.billType, r.mode, +r.premium, +(r.apl||0), r.lapseDate, days !== null ? days : '', getStatus(days).label];
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([hdrs, ...dataRows]);
+  ws['!cols'] = [{wch:32},{wch:14},{wch:12},{wch:12},{wch:11},{wch:6},{wch:13},{wch:12},{wch:14},{wch:12},{wch:13}];
+  XLSX.utils.book_append_sheet(wb, ws, 'All Cases');
+  const d = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, `GuardianLife_Import_${d}.xlsx`);
+}
+
+function setStatus(id, msg, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (cls === 'loading') {
+    el.innerHTML = `<span class="spin"></span>${msg}`;
+  } else {
+    el.textContent = msg;
+  }
+  el.className = 'status ' + (cls || '');
+}
+
+function clearAll() {
+  rows = [];
+  pdfFile = null;
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileBadge').style.display = 'none';
+  document.getElementById('fileName').textContent = '—';
+  document.getElementById('pdfParseBtn').disabled = true;
+  document.getElementById('pdfDlBtn').disabled = true;
+  document.getElementById('previewSection').style.display = 'none';
+  setStatus('pdfStatus', '', '');
+}
+</script>
+</body>
+</html>
